@@ -115,7 +115,7 @@ def _git_commit(cwd, message, github_account, check=False):
         int: the returncode of the call.
     """
     cmd = ('git -c user.name="{}" -c user.email="{}" commit -a'
-           ' --allow-empty-message -m "{}"').format(github_account.username,
+           ' --allow-empty-message -m "{}"').format(github_account.name,
                                                     github_account.email,
                                                     message)
     return _call(cmd, check=check, cwd=cwd)
@@ -135,6 +135,21 @@ def _git_push(cwd, remote='origin', branch='master', tags=False):
     if tags:
         cmd = 'git push {} --tags'.format(remote)
         _call(cmd, check=True, cwd=cwd, stdout=_DEVNULL, stderr=_DEVNULL)
+
+
+def _git_describe_tags_abbrev_0(cwd):
+    """Returns the latest tag to the repo at cwd.
+
+    Args:
+        cwd (str): the directory of the repo.
+
+    Returns:
+        str: the latest tag.
+    """
+    output = subprocess.check_output(
+        shlex.split('git describe --tags --abbrev=0'),
+        cwd=cwd)
+    return output.decode('utf-8').strip()
 
 
 def _verify_git_log(cwd, latest_tag, github_account):
@@ -225,6 +240,7 @@ def cron_discoveries():
         # `returncode` is non-zero if there's nothing to commit.
         if not returncode:
             _git_push(dartman_dir)
+
     return ''
 
 
@@ -245,10 +261,6 @@ def cron_clients_go_update():
         # /tmp/go/src/google-api-go-client
         _call('go get -d -t -v google.golang.org/api/...', check=True, env=env)
         client_lib_dir = os.path.join(go_dir, 'src/google.golang.org/api')
-
-        # TODO: Temporary! Remove.
-        _call('git fetch origin dartman', check=True, cwd=client_lib_dir)
-        _call('git checkout dartman', check=True, cwd=client_lib_dir)
 
         # Generate all clients.
         generator_dir = os.path.join(client_lib_dir, 'google-api-go-generator')
@@ -299,8 +311,9 @@ def cron_clients_go_update():
         if _git_commit(client_lib_dir, commitmsg, account) == 0:
             _git_push(
                 client_lib_dir,
-                remote='https://code.googlesource.com/_direct/google-api-go-client',
-                branch='dartman')
+                remote=('https://code.googlesource.com'
+                        '/_direct/google-api-go-client'))
+
     return ''
 
 
@@ -357,6 +370,7 @@ def cron_clients_nodejs_update():
         # A zero return code means there's something to push.
         if _git_commit(client_lib_dir, commitmsg, account) == 0:
             _git_push(client_lib_dir)
+
     return ''
 
 
@@ -372,11 +386,7 @@ def cron_clients_nodejs_release():
         client_lib_dir = os.path.join(tmp_dir, 'google-api-nodejs-client')
         _git_clone(Repo.NODEJS, github_account, client_lib_dir)
 
-        # Get the latest tag.
-        output = subprocess.check_output(
-            shlex.split('git describe --tags --abbrev=0'),
-            cwd=client_lib_dir)
-        latest_tag = output.decode('utf-8').strip()
+        latest_tag = _git_describe_tags_abbrev_0(client_lib_dir)
 
         if not _verify_git_log(client_lib_dir, latest_tag, github_account):
             return ''
@@ -480,10 +490,45 @@ def cron_clients_nodejs_release():
               cwd=client_lib_dir)
         _git_push(client_lib_dir, tags=True)
 
+        # Publish to npm.
         with open(os.path.expanduser('~/.npmrc'), 'w') as file_:
             file_.write('//registry.npmjs.org/:_authToken={}\n'.format(
                 npm_account.auth_token))
         _call('npm publish', check=True, cwd=client_lib_dir)
+
+        # Update docs.
+        _call('npm run doc', check=True, cwd=client_lib_dir)
+        _call('git checkout gh-pages', check=True, cwd=client_lib_dir)
+        _call('rm -rf latest', check=True, cwd=client_lib_dir)
+        _call('cp -r doc/googleapis/{} latest'.format(new_version), check=True,
+              cwd=client_lib_dir)
+        _call('cp -r doc/googleapis/{nv} {nv}'.format(nv=new_version),
+              check=True, cwd=client_lib_dir)
+
+        # Add a new bullet point to `index.md`.
+        index_filename = os.path.join(client_lib_dir, 'index.md')
+        lines = None
+        with open(index_filename, 'r') as file_:
+            lines = file_.readlines()
+        # Sanity check that the file looks roughly as expected...
+        if lines[3] != '\n' or not lines[4].startswith('*'):
+            raise Exception('index.md has an unexpected format')
+        # Remove the `latest` tag from the previous version.
+        lines[4] = lines[4].replace(' (latest)', '', 1)
+        # Insert the new version bulletpoint.
+        bp = ('* [v{nv} (latest)]'
+              '(http://google.github.io/google-api-nodejs-client'
+              '/{nv}/index.html)\n').format(nv=new_version)
+        lines.insert(4, bp)
+        with open(index_filename, 'w') as file_:
+            file_.write(''.join(lines))
+
+        # Add the directories and commit.
+        _call('git add latest {}'.format(new_version), check=True,
+              cwd=client_lib_dir)
+        _git_commit(client_lib_dir, new_version, github_account, check=True)
+        _git_push(client_lib_dir, branch='gh-pages')
+
     return ''
 
 
@@ -630,6 +675,7 @@ def cron_clients_php_update():
             commitmsg = _build_commitmsg(added, None, updated)
             _git_commit(client_lib_dir, commitmsg, account, check=True)
             _git_push(client_lib_dir)
+
     return ''
 
 
@@ -649,11 +695,7 @@ def cron_clients_php_release():
         _call('composer update', check=True, cwd=client_lib_dir)
         _call('vendor/bin/phpunit -c .', check=True, cwd=client_lib_dir)
 
-        # Grab the latest tag.
-        output = subprocess.check_output(
-            shlex.split('git describe --tags --abbrev=0'),
-            cwd=client_lib_dir)
-        latest_tag = output.decode('utf-8').strip()
+        latest_tag = _git_describe_tags_abbrev_0(client_lib_dir)
 
         if not _verify_git_log(client_lib_dir, latest_tag, account):
             return ''
@@ -680,6 +722,7 @@ def cron_clients_php_release():
         _call('git tag {}'.format(new_version), check=True,
               cwd=client_lib_dir)
         _git_push(client_lib_dir, tags=True)
+
     return ''
 
 
