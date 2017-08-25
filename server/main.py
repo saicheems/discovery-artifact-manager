@@ -18,12 +18,15 @@ _DEVNULL = open(os.devnull, 'w')
 
 # Matches strings like "M    apis/foo/v1.ts".
 _NODEJS_GIT_DIFF_RE = re.compile(r'(\w)\s+apis/(.+)/(.+)\.ts')
+# Matches strings like "M    generated/google/apis/foo_v1.rb".
+_RUBY_GIT_DIFF_RE = re.compile(r'(\w)\tgenerated/google/apis/([^/]+)\.rb')
 
 GitHubAccount = namedtuple('GitHubAccount',
                            'name email username personal_access_token')
 NpmAccount = namedtuple('NpmAccount', 'auth_token')
+RubyGemsAccount = namedtuple('RubyGemsAccount', 'api_key')
 
-Repo = Enum('Repo', 'DISCOVERY_ARTIFACT_MANAGER NODEJS PHP')
+Repo = Enum('Repo', 'DISCOVERY_ARTIFACT_MANAGER NODEJS PHP RUBY')
 
 
 def _get_github_account():
@@ -39,13 +42,25 @@ def _get_github_account():
 
 
 def _get_npm_account():
-    """Returns the npm account stored in Datastore
+    """Returns the npm account stored in Datastore.
+
     Returns:
         NpmAccount: an npm account.
     """
     ds = datastore.Client()
     account = list(ds.query(kind='NpmAccount').fetch())[0]
     return NpmAccount(account['auth_token'])
+
+
+def _get_rubygems_account():
+    """Returns the RubyGems account stored in Datastore.
+
+    Returns:
+        RubyGemsAccount: a RubyGems account.
+    """
+    ds = datastore.Client()
+    account = list(ds.query(kind='RubyGemsAccount').fetch())[0]
+    return RubyGemsAccount(account['api_key'])
 
 
 def _call(cmd, check=False, **kwargs):
@@ -84,6 +99,10 @@ def _get_repo_url(repo, github_account):
         path = 'google/google-api-nodejs-client'
     elif repo == Repo.PHP:
         path = 'google/google-api-php-client-services'
+    elif repo == Repo.RUBY:
+        path = 'google/google-api-ruby-client'
+        # TODO: Delete!
+        return 'https://{}:{}@github.com/saicheems/google-api-ruby-client'.format(github_account.username, github_account.personal_access_token)
     else:
         raise Exception('unknown repo: {}'.format(repo))
     return 'https://{}:{}@github.com/{}'.format(
@@ -454,9 +473,9 @@ def cron_clients_nodejs_release():
         package_data = None
         with open(package_filename) as file_:
             package_data = file_.read()
+        data = json.loads(package_data, object_pairs_hook=OrderedDict)
+        data['version'] = new_version
         with open(package_filename, 'w') as file_:
-            data = json.loads(package_data, object_pairs_hook=OrderedDict)
-            data['version'] = new_version
             file_.write(json.dumps(data, indent=2) + '\n')
 
         # Update `CHANGELOG.md`.
@@ -508,7 +527,7 @@ def cron_clients_nodejs_release():
         # Add a new bullet point to `index.md`.
         index_filename = os.path.join(client_lib_dir, 'index.md')
         lines = None
-        with open(index_filename, 'r') as file_:
+        with open(index_filename) as file_:
             lines = file_.readlines()
         # Sanity check that the file looks roughly as expected...
         if lines[3] != '\n' or not lines[4].startswith('*'):
@@ -523,7 +542,7 @@ def cron_clients_nodejs_release():
         with open(index_filename, 'w') as file_:
             file_.write(''.join(lines))
 
-        # Add the directories and commit.
+        # Stage all changes and commit.
         _call('git add latest {}'.format(new_version), check=True,
               cwd=client_lib_dir)
         _git_commit(client_lib_dir, new_version, github_account, check=True)
@@ -722,6 +741,194 @@ def cron_clients_php_release():
         _call('git tag {}'.format(new_version), check=True,
               cwd=client_lib_dir)
         _git_push(client_lib_dir, tags=True)
+
+    return ''
+
+
+@app.route('/cron/clients/ruby/update')
+def cron_clients_ruby_update():
+    if request.headers.get('X-Appengine-Cron') is None:
+        abort(403)
+
+    account = _get_github_account()
+    with TemporaryDirectory() as tmp_dir:
+        # /tmp/google-api-ruby-client
+        client_lib_dir = os.path.join(tmp_dir, 'google-api-ruby-client')
+        _git_clone(Repo.RUBY, account, client_lib_dir)
+
+        # Install dependencies.
+        _call('bundle install --path vendor/bundle', check=True,
+              cwd=client_lib_dir)
+        # Delete the existing clients, except for `discovery_v1`, which is used
+        # in the generation process.
+        _call('rm -rf generated', check=True, cwd=client_lib_dir)
+        _call(('git checkout generated/google/apis/discovery_v1.rb'
+               ' generated/google/apis/discovery_v1'), check=True,
+              cwd=client_lib_dir)
+        # Generate all clients.
+        _call('./script/generate', check=True, cwd=client_lib_dir)
+        # Run tests.
+        _call('bundle exec rake spec', check=True, cwd=client_lib_dir)
+        # Stage all changes.
+        _call('git add api_names_out.yaml generated', check=True,
+              cwd=client_lib_dir)
+
+        # A set of IDs for APIs which have been newly added.
+        added = set()
+        # A set of IDs for APIs which have been deleted.
+        deleted = set()
+        # A set of IDs for APIs which have been updated.
+        updated = set()
+
+        # Get the names of files that have been changed since the last commit
+        # + their status ("A", "D", or "M").
+        diff_ns = subprocess.check_output(
+            shlex.split('git diff --name-status --staged'), cwd=client_lib_dir)
+        # Match for each client and add to the appropriate set.
+        for match in _RUBY_GIT_DIFF_RE.finditer(diff_ns.decode('utf-8')):
+            status = match.group(1)
+            name_version = match.group(2)
+            if status == 'A':
+                added.add(name_version)
+            elif status == 'D':
+                deleted.add(name_version)
+            elif status == 'M':
+                updated.add(name_version)
+
+        commitmsg = _build_commitmsg(added, deleted, updated)
+        # A zero return code means there's something to push.
+        if _git_commit(client_lib_dir, commitmsg, account) == 0:
+            _git_push(client_lib_dir)
+
+    return ''
+
+
+@app.route('/cron/clients/ruby/release')
+def cron_clients_ruby_release():
+    if request.headers.get('X-Appengine-Cron') is None:
+        abort(403)
+
+    github_account = _get_github_account()
+    rubygems_account = _get_rubygems_account()
+    with TemporaryDirectory() as tmp_dir:
+        # /tmp/google-api-ruby-client
+        client_lib_dir = os.path.join(tmp_dir, 'google-api-ruby-client')
+        _git_clone(Repo.RUBY, github_account, client_lib_dir)
+
+        latest_tag = _git_describe_tags_abbrev_0(client_lib_dir)
+
+        if not _verify_git_log(client_lib_dir, latest_tag, github_account):
+            return ''
+
+        gem_search_re = re.compile(r'google-api-client \((.+)\)')
+        # Get the latest `google-api-client` package version on RubyGems.
+        output = subprocess.check_output(
+            shlex.split(('gem search --remote --no-verbose -e'
+                         ' google-api-client')))
+        match = gem_search_re.match(output.decode('utf-8').strip())
+        if not match:
+            raise Exception(
+                ('latest google-api-client version does not match the pattern'
+                 ' \'{}\': {}').format(gem_search_re.pattern,
+                                       output.decode('utf-8').strip()))
+        latest_version = match.group(1)
+
+        if latest_tag != latest_version:
+            raise Exception(
+                ('latest tag does not match the latest package version on'
+                 ' RubyGems: {} != {}').format(latest_tag, latest_version))
+
+        # Install dependencies.
+        _call('bundle install --path vendor/bundle', check=True,
+              cwd=client_lib_dir)
+        # Run tests.
+        _call('bundle exec rake spec', check=True, cwd=client_lib_dir)
+
+        # `version_re` matches versions like "0.13.2".
+        version_re = re.compile(r'^0\.([0-9]+)\.([0-9]+)$')
+        match = version_re.match(latest_tag)
+        if not match:
+            raise Exception(
+                'latest tag does not match the pattern \'{}\': {}'.format(
+                    version_re.pattern, latest_tag))
+
+        minor_version = int(match.group(1))
+        patch_version = int(match.group(2))
+
+        # Get the names of files that have been changed since the last commit
+        # + their status ("A", "D", or "M").
+        diff_ns = subprocess.check_output(
+            shlex.split(
+                'git diff --name-status {}..HEAD --oneline'.format(
+                    latest_tag)),
+            cwd=client_lib_dir)
+
+        # Get the status for each file.
+        statuses = [match.group(1) for match
+                    in _RUBY_GIT_DIFF_RE.finditer(diff_ns.decode('utf-8'))]
+        # `changes` is a map of API ID to file status ("A", "D", or "M").
+        changes = {}
+        for match in _RUBY_GIT_DIFF_RE.finditer(diff_ns.decode('utf-8')):
+            status = match.group(1)
+            changes[match.group(2)] = status
+
+        # If any clients were deleted, increment the minor version.
+        if 'D' in statuses:
+            minor_version += 1
+        else:  # Otherwise, increment the patch version.
+            patch_version += 1
+
+        new_version = '0.{}.{}'.format(minor_version, patch_version)
+
+        # Update `version.rb` with the new version.
+        version_filename = os.path.join(client_lib_dir, 'lib', 'google',
+                                        'apis', 'version.rb')
+        version_data = None
+        with open(version_filename) as file_:
+            version_data = file_.read()
+        # Replace the value of `VERSION`.
+        version_data = re.sub('VERSION = \'.+\'',
+                              'VERSION = \'{}\''.format(new_version),
+                              version_data, 1)
+        with open(version_filename, 'w') as file_:
+            file_.write(version_data)
+
+        # Update `CHANGELOG.md`.
+        changelog = '# {}\n'.format(new_version)
+        if 'D' in statuses:
+            changelog += '\n* *Breaking changes*:\n'
+        for name_version in sorted(changes):
+            if changes[name_version] == 'D':
+                changelog += '  * Deleted `{}`\n'.format(name_version)
+        if 'A' in statuses or 'M' in statuses:
+            changelog += '\n* *Backwards compatible changes*:\n'
+        for name_version in sorted(changes):
+            if changes[name_version] == 'A':
+                changelog += '  * Added `{}`\n'.format(name_version)
+        for name_version in sorted(changes):
+            if changes[name_version] == 'M':
+                changelog += '  * Updated `{}`\n'.format(name_version)
+        changelog += '\n'
+        changelog_filename = os.path.join(client_lib_dir, 'CHANGELOG.md')
+        changelog_data = None
+        with open(changelog_filename) as file_:
+            changelog_data = file_.read()
+        with open(changelog_filename, 'w') as file_:
+            file_.write(changelog + changelog_data)
+
+        # Commit the changes to `version.rb` and `CHANGELOG.md`.
+        _git_commit(client_lib_dir, new_version, github_account, check=True)
+
+        _call('git tag {}'.format(new_version), check=True,
+              cwd=client_lib_dir)
+        _git_push(client_lib_dir, tags=True)
+
+        # Publish to RubyGems.
+        with open(os.path.expanduser('~/.gem/credentials'), 'w') as file_:
+            file_.write('---\n:rubygems_api_key: {}\n'.format(
+                rubygems_account.api_key))
+        #_call('gem push pkg/google-api-client-{}.gem'.format(new_version),
+        #      check=True, cwd=client_lib_dir)
 
     return ''
 

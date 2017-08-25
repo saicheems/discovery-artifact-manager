@@ -23,6 +23,12 @@ RUN php -r "unlink('composer-setup.php');"
 # Install Python 3.6.
 RUN virtualenv /env -p python3.6
 
+# Install Ruby 2.4.1 and Bundler.
+RUN wget https://cache.ruby-lang.org/pub/ruby/2.4/ruby-2.4.1.tar.gz
+RUN tar -xvf ruby-2.4.1.tar.gz
+RUN cd ruby-2.4.1 && ./configure && make && make install
+RUN gem install bundler --no-ri --no-rdoc
+
 # Set virtualenv environment variables. This is equivalent to running
 # source /env/bin/activate
 ENV VIRTUAL_ENV /env
