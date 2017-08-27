@@ -101,8 +101,6 @@ def _get_repo_url(repo, github_account):
         path = 'google/google-api-php-client-services'
     elif repo == Repo.RUBY:
         path = 'google/google-api-ruby-client'
-        # TODO: Delete!
-        return 'https://{}:{}@github.com/saicheems/google-api-ruby-client'.format(github_account.username, github_account.personal_access_token)
     else:
         raise Exception('unknown repo: {}'.format(repo))
     return 'https://{}:{}@github.com/{}'.format(
@@ -896,12 +894,12 @@ def cron_clients_ruby_release():
         # Update `CHANGELOG.md`.
         changelog = '# {}\n'.format(new_version)
         if 'D' in statuses:
-            changelog += '\n* *Breaking changes*:\n'
+            changelog += '* Breaking changes:\n'
         for name_version in sorted(changes):
             if changes[name_version] == 'D':
                 changelog += '  * Deleted `{}`\n'.format(name_version)
         if 'A' in statuses or 'M' in statuses:
-            changelog += '\n* *Backwards compatible changes*:\n'
+            changelog += '* Backwards compatible changes:\n'
         for name_version in sorted(changes):
             if changes[name_version] == 'A':
                 changelog += '  * Added `{}`\n'.format(name_version)
@@ -923,12 +921,16 @@ def cron_clients_ruby_release():
               cwd=client_lib_dir)
         _git_push(client_lib_dir, tags=True)
 
-        # Publish to RubyGems.
-        with open(os.path.expanduser('~/.gem/credentials'), 'w') as file_:
+        # Package the gem and publish it to RubyGems.
+        _call('./script/package', check=True, cwd=client_lib_dir)
+        credentials_filename = os.path.expanduser('~/.gem/credentials')
+        with open(credentials_filename, 'w') as file_:
             file_.write('---\n:rubygems_api_key: {}\n'.format(
                 rubygems_account.api_key))
-        #_call('gem push pkg/google-api-client-{}.gem'.format(new_version),
-        #      check=True, cwd=client_lib_dir)
+        # The credentials file must have permissions of `0600`.
+        os.chmod(credentials_filename, 0o600)
+        _call('gem push pkg/google-api-client-{}.gem'.format(new_version),
+              check=True, cwd=client_lib_dir)
 
     return ''
 
