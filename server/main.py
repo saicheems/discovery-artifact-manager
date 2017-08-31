@@ -461,6 +461,7 @@ def cron_clients_nodejs_release():
         # If any clients were deleted, increment the major version.
         if 'D' in statuses:
             major_version += 1
+            minor_version = 0
         else:  # Otherwise, increment the minor version.
             minor_version += 1
 
@@ -873,6 +874,7 @@ def cron_clients_ruby_release():
         # If any clients were deleted, increment the minor version.
         if 'D' in statuses:
             minor_version += 1
+            patch_version = 0
         else:  # Otherwise, increment the patch version.
             patch_version += 1
 
