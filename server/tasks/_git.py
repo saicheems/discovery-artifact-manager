@@ -1,7 +1,7 @@
 """Implements a utility for cloning and querying Git repositories."""
 import re
 from enum import Enum
-from tasks._check_call import check_call
+from tasks._check_output import check_output
 
 _DIFF_NAME_STATUS_RE = re.compile(r'^(\w)\s+(.*)$')
 
