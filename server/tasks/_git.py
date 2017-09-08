@@ -30,23 +30,7 @@ def clone_from_github(path, dest, github_account=None):
                                      github_account.personal_access_token,
                                      hostname)
     url = 'https://{}/{}'.format(hostname, path)
-    return clone(url, dest)
-
-
-def clone(url, dest):
-    """Clones the repository at `url` to `dest`.
-
-    Args:
-        url (str): the remote URL.
-        dest (str): the destination filepath.
-
-    Raises:
-        CallError: if the call returns a non-zero return code.
-
-    Returns:
-        Repository: the repository.
-    """
-    check_call('git clone {} {}'.format(url, dest))
+    check_output(['git', 'clone', url, dest])
     return Repository(dest)
 
 
@@ -65,7 +49,7 @@ class Repository(object):
         Raises:
             CallError: if the call returns a non-zero return code.
         """
-        check_call('git add {}'.format(' '.join(paths)), cwd=self.filepath)
+        check_output(['git', 'add', *paths], cwd=self.filepath)
 
     def authors_since(self, rev):
         """Returns a list of emails of the authors of all commits since `rev`.
@@ -81,8 +65,9 @@ class Repository(object):
             list(str): a list of emails of the authors of all commits since
                 `rev`.
         """
-        data = check_call('git log {}..HEAD --pretty=format:"%ae"'.format(rev),
-                          cwd=self.filepath)
+        data = check_output(
+            ['git', 'log', '{}..HEAD'.format(rev), '--pretty=format:"%ae"'],
+            cwd=self.filepath)
         return data.strip().split('\n')
 
     def commit(self, message, name, email):
@@ -96,9 +81,12 @@ class Repository(object):
         Raises:
             CallError: if the call returns a non-zero return code.
         """
-        cmd = ('git -c user.name="{}" -c user.email="{}" commit -a'
-               ' --allow-empty-message -m "{}"').format(name, email, message)
-        check_call(cmd, cwd=self.filepath)
+        check_output(
+            ['git',
+             '-c', 'user.name={}'.format(name),
+             '-c', 'user.email={}'.format(email),
+             'commit', '-a', '--allow-empty-message', '-m', message],
+            cwd=self.filepath)
 
     def diff_name_status(self, rev=None, staged=True):
         """Return a list of status, filename pairs of changes from `rev`.
@@ -112,15 +100,15 @@ class Repository(object):
             CallError: if the call returns a non-zero return code.
 
         Returns:
-            list((Status, str)): a list of status, filename pairs of changes
+            list((str, Status)): a list of filename, Status pairs of changes
                 from HEAD.
         """
-        cmd = 'git diff --name-status'
+        args = ['git', 'diff', '--name-status']
         if rev:
-            cmd += ' {}..HEAD'.format(rev)
+            args.append('{}..HEAD'.format(rev))
         elif staged:
-            cmd = cmd + ' --staged'
-        output = check_call(cmd, cwd=self.filepath).strip()
+            args.append('--staged')
+        output = check_output(args, cwd=self.filepath).strip()
         pairs = []
         if not output:
             return pairs
@@ -129,7 +117,7 @@ class Repository(object):
             # as expected on the command output.
             match = _DIFF_NAME_STATUS_RE.match(line)
             if not match:
-                raise Exception('unexpected diff line format: {}'.format(line))
+                continue
             status = {
                 'A': Status.ADDED,
                 'D': Status.DELETED,
@@ -147,7 +135,8 @@ class Repository(object):
         Returns:
             str: the latest tag.
         """
-        data = check_call('git describe --tags --abbrev=0', cwd=self.filepath)
+        data = check_output(
+            ['git', 'describe', '--tags', '--abbrev=0'], cwd=self.filepath)
         return data.strip()
 
     def push(self, remote='origin', branch='master', tags=False):
@@ -161,10 +150,12 @@ class Repository(object):
         Raises:
             CallError: if the call returns a non-zero return code.
         """
-        cmd = 'git push {} {}'.format(remote, branch)
+        args = ['git', 'push', remote]
         if tags:
-            cmd = 'git push {} --tags'.format(remote)
-        check_call(cmd, cwd=self.filepath)
+            args.append('--tags')
+        else:
+            args.append(branch)
+        check_output(args, cwd=self.filepath)
 
     def reset(self, rev, mode='soft'):
         """Resets current HEAD to `rev`.
@@ -177,10 +168,11 @@ class Repository(object):
         Raises:
             CallError: if the call returns a non-zero return code.
         """
-        cmd = 'git reset'
+        args = ['git', 'reset']
         if mode:
-            cmd += ' --{}'.format(mode)
-        check_call(cmd + ' HEAD~{}'.format(rev), cwd=self.filepath)
+            args.append('--{}'.format(mode))
+        args.append('{}'.format(rev))
+        check_output(args, cwd=self.filepath)
 
     def tag(self, name):
         """Creates a tag.
@@ -191,4 +183,4 @@ class Repository(object):
         Raises:
             CallError: if the call returns a non-zero return code.
         """
-        check_call('git tag {}'.format(name), cwd=self.filepath)
+        check_output(['git', 'tag', name], cwd=self.filepath)

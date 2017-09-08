@@ -28,6 +28,7 @@ def check_output(args, **kwargs):
     Returns:
         str: the output from `stdout`, as a utf-8 string.
     """
+    print(' '.join(args))
     returncode, stdoutdata, stderrdata = _call(args, **kwargs)
     if returncode:
         message = ''
