@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 from tasks import _git
 
@@ -22,22 +23,27 @@ def discovery_documents(repo, preferred_only=True, skip_discovery_v1=True):
         dict(string, string): a map of API IDs to Discovery document
             filenames.
     """
-    filenames = glob.glob(os.path.join(repo.filepath, 'discoveries', '*.json'))
+    filenames = glob.glob(os.path.join(repo.filepath, 'discoveries/*.json'))
     filenames = [x for x in filenames if os.path.basename(x) != 'index.json']
     discovery_documents = {}
     for filename in filenames:
-        data = {}
+        id_ = None
         with open(filename) as file_:
-            data = json.load(file_)
-        id_ = data['id']
+            id_ = json.load(file_)['id']
         if id_ in discovery_documents:
             continue
-        preferred = data.get('preferred', False)
-        if id_ in ['admin:directory_v1', 'admin:datatransfer_v1']:
-            preferred = True
-        if skip_discovery_v1 and id_ == 'discovery:v1':
-            continue
-        if preferred_only and not preferred:
-            continue
         discovery_documents[id_] = filename
-    return discovery_documents
+    if skip_discovery_v1:
+        discovery_documents.pop('discovery:v1')
+    if not preferred_only:
+        return discovery_documents
+    index = {}
+    with open(os.path.join(repo.filepath, 'discoveries/index.json')) as file_:
+        index = json.load(file_)
+    preferred = set()
+    for api in index['items']:
+        id_ = api['id']
+        if api['preferred'] or id_ in ['admin:directory_v1',
+                                       'admin:datatransfer_v1']:
+            preferred.add(id_)
+    return {k: v for k, v in discovery_documents.items() if k in preferred}

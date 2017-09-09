@@ -30,6 +30,22 @@ def clone_from_github(path, dest, github_account=None):
                                      github_account.personal_access_token,
                                      hostname)
     url = 'https://{}/{}'.format(hostname, path)
+    return clone(url, dest)
+
+
+def clone(url, dest):
+    """Clones a git Repository.
+
+    Args:
+        url (str): the URL of the repository.
+        dest (str): the destination filepath.
+
+    Raises:
+        CallError: if the call returns a non-zero return code.
+
+    Returns:
+        Repository: the repository.
+    """
     check_output(['git', 'clone', url, dest])
     return Repository(dest)
 
@@ -123,7 +139,7 @@ class Repository(object):
                 'D': Status.DELETED,
                 'M': Status.UPDATED
             }.get(match.group(1), Status.UNKNOWN)
-            pairs.append((status, match.group(2)))
+            pairs.append((match.group(2), status))
         return pairs
 
     def latest_tag(self):
