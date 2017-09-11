@@ -56,16 +56,16 @@ class Repository(object):
     def __init__(self, filepath):
         self.filepath = filepath
 
-    def add(self, paths):
+    def add(self, filepaths):
         """Add file contents to the index.
 
         Args:
-            paths (list(str)): a list of files to add content from.
+            paths (list(str)): a list of filepaths to add content from.
 
         Raises:
             CallError: if the call returns a non-zero return code.
         """
-        check_output(['git', 'add', *paths], cwd=self.filepath)
+        check_output(['git', 'add', *filepaths], cwd=self.filepath)
 
     def authors_since(self, rev):
         """Returns a list of emails of the authors of all commits since `rev`.
@@ -173,8 +173,8 @@ class Repository(object):
             args.append(branch)
         check_output(args, cwd=self.filepath)
 
-    def reset(self, rev, mode='soft'):
-        """Resets current HEAD to `rev`.
+    def soft_reset(self, rev):
+        """Soft resets current HEAD to `rev`.
 
         Args:
             rev (str): a revision parameter. For example: "d1f3ffe7",
@@ -184,10 +184,7 @@ class Repository(object):
         Raises:
             CallError: if the call returns a non-zero return code.
         """
-        args = ['git', 'reset']
-        if mode:
-            args.append('--{}'.format(mode))
-        args.append('{}'.format(rev))
+        args = ['git', 'reset', '--soft', rev]
         check_output(args, cwd=self.filepath)
 
     def tag(self, name):

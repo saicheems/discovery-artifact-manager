@@ -15,9 +15,7 @@ _REMOTE_URL = 'https://code.googlesource.com/_direct/google-api-go-client'
 def _generate_all_clients(repo, env):
     generator_filepath = join(repo.filepath, 'google-api-go-generator')
     check_output(['make', 'all'], cwd=generator_filepath, env=env)
-    added = set()
-    deleted = set()
-    updated = set()
+    added, deleted, updated = set(), set(), set()
     for filename, status in repo.diff_name_status(staged=False):
         match = _NAME_VERSION_RE.match(filename)
         if not match:

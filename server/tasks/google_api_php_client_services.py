@@ -8,29 +8,12 @@ from os.path import join
 from tasks import _check_output, _commit_message, _git
 from tasks._check_output import check_output
 
+_REPO_NAME = 'google-api-php-client-services'
+_REPO_PATH = 'google/google-api-php-client-services'
 # Matches strings like ".../src/Google/Service/BigQuery.php".
 _SERVICE_FILENAME_RE = re.compile(r'src/Google/Service/[^/]+\.php$')
 # Matches strings like "v0.12".
 _VERSION_RE = re.compile(r'^v0\.([0-9]+)$')
-
-
-def _generate_client(repo, venv_filepath, ddoc_filename):
-    client_filepath = join(repo.filepath, 'src/Google/Service')
-    with TemporaryDirectory() as dest_filepath:
-        check_output([join(venv_filepath, 'bin/generate_library'),
-                      '--input={}'.format(ddoc_filename),
-                      '--language=php',
-                      '--language_variant=1.2.0',
-                      '--output_dir={}'.format(dest_filepath)])
-        dirs = os.listdir(dest_filepath)
-        client_name = os.path.splitext(dirs[0])[0]  # ex: "BigQuery"
-        old_client_filepath = join(client_filepath, client_name)
-        old_client_filename = '{}.php'.format(old_client_filepath)
-        check_output(['rm', '-rf', old_client_filename, old_client_filepath])
-        new_client_filepath = join(dest_filepath, client_name)
-        new_client_filename = '{}.php'.format(new_client_filepath)
-        check_output(['cp', new_client_filename, old_client_filename])
-        check_output(['cp', '-r', new_client_filepath, old_client_filepath])
 
 
 def _generate_and_commit_all_clients(repo, venv_filepath, discovery_documents):
@@ -57,18 +40,33 @@ def _generate_and_commit_all_clients(repo, venv_filepath, discovery_documents):
     return added, updated
 
 
+def _generate_client(repo, venv_filepath, ddoc_filename):
+    client_filepath = join(repo.filepath, 'src/Google/Service')
+    with TemporaryDirectory() as dest_filepath:
+        check_output([join(venv_filepath, 'bin/generate_library'),
+                      '--input={}'.format(ddoc_filename),
+                      '--language=php',
+                      '--language_variant=1.2.0',
+                      '--output_dir={}'.format(dest_filepath)])
+        dirs = os.listdir(dest_filepath)
+        client_name = os.path.splitext(dirs[0])[0]  # ex: "BigQuery"
+        old_client_filepath = join(client_filepath, client_name)
+        old_client_filename = '{}.php'.format(old_client_filepath)
+        check_output(['rm', '-rf', old_client_filename, old_client_filepath])
+        new_client_filepath = join(dest_filepath, client_name)
+        new_client_filename = '{}.php'.format(new_client_filepath)
+        check_output(['cp', new_client_filename, old_client_filename])
+        check_output(['cp', '-r', new_client_filepath, old_client_filepath])
+
+
 def _run_tests(repo):
     check_output(['composer', 'update'], cwd=repo.filepath)
     check_output(['vendor/bin/phpunit', '-c', '.'], cwd=repo.filepath)
 
 
-def clone(filepath, github_account):
-    return _git.clone_from_github('google/google-api-php-client-services',
-                                  filepath,
-                                  github_account=github_account)
-
-
-def update(repo, discovery_documents, github_account):
+def update(filepath, discovery_documents, github_account):
+    repo = _git.clone_from_github(
+        _REPO_PATH, join(filepath, _REPO_NAME), github_account=github_account)
     venv_filepath = join(repo.filepath, 'venv')
     check_output(['virtualenv', venv_filepath])
     check_output([join(venv_filepath, 'bin/pip'),
@@ -80,22 +78,24 @@ def update(repo, discovery_documents, github_account):
     if commit_count == 0:
         return
     _run_tests(repo)
-    repo.reset('HEAD~{}'.format(commit_count))
+    repo.soft_reset('HEAD~{}'.format(commit_count))
     commitmsg = _commit_message.build(added, None, updated)
     repo.commit(commitmsg, github_account.name, github_account.email)
     repo.push()
 
 
-def release(repo, github_account):
+def release(filepath, github_account):
+    repo = _git.clone_from_github(
+        _REPO_PATH, join(filepath, _REPO_NAME), github_account=github_account)
     latest_tag = repo.latest_tag()
-    authors = repo.authors_since(latest_tag)
-    if not authors or not all([x == github_account.email for x in authors]):
-        return
     match = _VERSION_RE.match(latest_tag)
     if not match:
         raise Exception(
-            'latest tag does not match the pattern \'{}\': {}'.format(
+            'latest tag does not match the pattern "{}": {}'.format(
                 _VERSION_RE.pattern, latest_tag))
+    authors = repo.authors_since(latest_tag)
+    if not authors or not all([x == github_account.email for x in authors]):
+        return
     _run_tests(repo)
     minor_version = match.group(1)
     new_minor_version = str(int(minor_version) + 1)
