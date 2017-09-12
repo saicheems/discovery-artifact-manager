@@ -100,21 +100,21 @@ def _update_changelog_md(repo, new_version, added, deleted, updated):
     for name_version in sorted(updated):
         data += '  * Updated `{}`\n'.format(name_version)
     data += '\n'
-    changelog_md_filename = os.path.join(repo.filepath, 'CHANGELOG.md')
-    with open(changelog_md_filename) as file_:
+    filename = os.path.join(repo.filepath, 'CHANGELOG.md')
+    with open(filename) as file_:
         data = data + file_.read()
-    with open(changelog_md_filename, 'w') as file_:
+    with open(filename, 'w') as file_:
         file_.write(data)
 
 
 def _update_version_rb(repo, new_version):
-    version_rb_filename = join(repo.filepath, 'lib/google/apis/version.rb')
+    filename = join(repo.filepath, 'lib/google/apis/version.rb')
     data = ''
-    with open(version_rb_filename) as file_:
+    with open(filename) as file_:
         data = file_.read()
     data = re.sub(
         'VERSION = \'.+\'', 'VERSION = \'{}\''.format(new_version), data, 1)
-    with open(version_rb_filename) as file_:
+    with open(filename) as file_:
         file_.write(data)
 
 

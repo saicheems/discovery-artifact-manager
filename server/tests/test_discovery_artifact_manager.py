@@ -1,7 +1,7 @@
 from unittest.mock import call, Mock, mock_open, patch
 
 from tasks import _accounts, discovery_artifact_manager
-from tests import helpers
+from tests import common
 
 _DISCOVERY_FILENAMES = [
     'discoveries/discovery.v1.json',
@@ -20,7 +20,7 @@ _GITHUB_ACCOUNT = _accounts.GitHubAccount('Test', 'test@test.com', '_', '_')
 @patch('tasks.discovery_artifact_manager._git.clone_from_github')
 def test_discovery_documents(clone_from_github_mock, glob_mock, open_mock):
     repo_mock = Mock()
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
     glob_mock.glob.return_value = _DISCOVERY_FILENAMES
     open_mock.side_effect = [
@@ -47,7 +47,7 @@ def test_discovery_documents_preferred(clone_from_github_mock,
                                        glob_mock,
                                        open_mock):
     repo_mock = Mock()
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
     glob_mock.glob.return_value = _DISCOVERY_FILENAMES
     open_mock.side_effect = [
@@ -83,7 +83,7 @@ def test_discovery_documents_skip(clone_from_github_mock,
                                   glob_mock,
                                   open_mock):
     repo_mock = Mock()
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
     glob_mock.glob.return_value = _DISCOVERY_FILENAMES
     open_mock.side_effect = [
@@ -110,7 +110,7 @@ def test_discovery_documents_preferred_skip(clone_from_github_mock,
                                             glob_mock,
                                             open_mock):
     repo_mock = Mock()
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
     glob_mock.glob.return_value = _DISCOVERY_FILENAMES
     open_mock.side_effect = [
@@ -151,7 +151,7 @@ def test_update(clone_from_github_mock,
         'discoveries/index.json',
         'discoveries/foo.v1.json'
     ]
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
     temporary_directory_mock.return_value.__enter__.return_value = '/tmp/go'
     environ_mock.copy.return_value = {}
@@ -195,7 +195,7 @@ def test_update_no_changes(clone_from_github_mock,
                            environ_mock):
     repo_mock = Mock()
     repo_mock.diff_name_status.return_value = []
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
     temporary_directory_mock.return_value.__enter__.return_value = '/tmp/go'
     environ_mock.copy.return_value = {}

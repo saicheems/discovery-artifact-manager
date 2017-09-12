@@ -2,10 +2,8 @@ from unittest.mock import Mock, call, patch
 
 import pytest
 
-from tasks import _accounts, _git, google_api_php_client_services
-from tests import helpers
-
-_GITHUB_ACCOUNT = _accounts.GitHubAccount('Test', 'test@test.com', '_', '_')
+from tasks import _git, google_api_php_client_services
+from tests import common
 
 
 @patch('tasks.google_api_php_client_services._commit_message.date')
@@ -26,7 +24,7 @@ def test_update(clone_from_github_mock,
          ('src/Google/Service/Bar/BarFoo.php', _git.Status.ADDED)],
         []  # No change to "baz:v1".
     ]
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
     discovery_documents = {'foo:v1': 'foo.v1.json',
                            'bar:v1': 'bar.v1.json',
@@ -45,11 +43,11 @@ def test_update(clone_from_github_mock,
     manager.attach_mock(repo_mock, 'repo')
 
     google_api_php_client_services.update(
-        '/tmp', discovery_documents, _GITHUB_ACCOUNT)
+        '/tmp', discovery_documents, common.GITHUB_ACCOUNT)
     assert manager.mock_calls == [
         call.clone_from_github('google/google-api-php-client-services',
                                '/tmp/google-api-php-client-services',
-                               github_account=_GITHUB_ACCOUNT),
+                               github_account=common.GITHUB_ACCOUNT),
         call.check_output(
             ['virtualenv', '/tmp/google-api-php-client-services/venv']),
         call.check_output(['/tmp/google-api-php-client-services/venv/bin/pip',
@@ -68,7 +66,8 @@ def test_update(clone_from_github_mock,
         call.check_output(
             ['cp',
              '/tmp2/Foo.php',
-             '/tmp/google-api-php-client-services/src/Google/Service/Foo.php']),
+             ('/tmp/google-api-php-client-services/src/Google/Service/'
+              'Foo.php')]),
         call.check_output(
             ['cp', '-r',
              '/tmp2/Foo',
@@ -89,7 +88,8 @@ def test_update(clone_from_github_mock,
         call.check_output(
             ['cp',
              '/tmp2/Bar.php',
-             '/tmp/google-api-php-client-services/src/Google/Service/Bar.php']),
+             ('/tmp/google-api-php-client-services/src/Google/Service/'
+              'Bar.php')]),
         call.check_output(
             ['cp', '-r',
              '/tmp2/Bar',
@@ -110,7 +110,8 @@ def test_update(clone_from_github_mock,
         call.check_output(
             ['cp',
              '/tmp2/Baz.php',
-             '/tmp/google-api-php-client-services/src/Google/Service/Baz.php']),
+             ('/tmp/google-api-php-client-services/src/Google/Service/'
+              'Baz.php')]),
         call.check_output(
             ['cp', '-r',
              '/tmp2/Baz',
@@ -141,7 +142,7 @@ def test_update_no_changes(clone_from_github_mock,
                            check_output_mock):
     repo_mock = Mock()
     repo_mock.diff_name_status.side_effect = [[], [], []]
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
     discovery_documents = {'foo:v1': 'foo.v1.json'}
     temporary_directory_mock.return_value.__enter__.return_value = '/tmp2'
@@ -153,11 +154,11 @@ def test_update_no_changes(clone_from_github_mock,
     manager.attach_mock(repo_mock, 'repo')
 
     google_api_php_client_services.update(
-        '/tmp', discovery_documents, _GITHUB_ACCOUNT)
+        '/tmp', discovery_documents, common.GITHUB_ACCOUNT)
     assert manager.mock_calls == [
         call.clone_from_github('google/google-api-php-client-services',
                                '/tmp/google-api-php-client-services',
-                               github_account=_GITHUB_ACCOUNT),
+                               github_account=common.GITHUB_ACCOUNT),
         call.check_output(
             ['virtualenv', '/tmp/google-api-php-client-services/venv']),
         call.check_output(['/tmp/google-api-php-client-services/venv/bin/pip',
@@ -176,7 +177,8 @@ def test_update_no_changes(clone_from_github_mock,
         call.check_output(
             ['cp',
              '/tmp2/Foo.php',
-             '/tmp/google-api-php-client-services/src/Google/Service/Foo.php']),
+             ('/tmp/google-api-php-client-services/src/Google/Service/'
+              'Foo.php')]),
         call.check_output(
             ['cp', '-r',
              '/tmp2/Foo',
@@ -192,7 +194,7 @@ def test_release(clone_from_github_mock, check_output_mock):
     repo_mock = Mock()
     repo_mock.latest_tag.return_value = 'v0.1'
     repo_mock.authors_since.return_value = ['test@test.com', 'test@test.com']
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
 
     manager = Mock()
@@ -200,11 +202,11 @@ def test_release(clone_from_github_mock, check_output_mock):
     manager.attach_mock(check_output_mock, 'check_output')
     manager.attach_mock(repo_mock, 'repo')
 
-    google_api_php_client_services.release('/tmp', _GITHUB_ACCOUNT)
+    google_api_php_client_services.release('/tmp', common.GITHUB_ACCOUNT)
     assert manager.mock_calls == [
         call.clone_from_github('google/google-api-php-client-services',
                                '/tmp/google-api-php-client-services',
-                               github_account=_GITHUB_ACCOUNT),
+                               github_account=common.GITHUB_ACCOUNT),
         call.repo.latest_tag(),
         call.repo.authors_since('v0.1'),
         call.check_output(['composer', 'update'],
@@ -221,18 +223,18 @@ def test_release_no_commits_since_latest_tag(clone_from_github_mock):
     repo_mock = Mock()
     repo_mock.latest_tag.return_value = 'v0.1'
     repo_mock.authors_since.return_value = []
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
 
     manager = Mock()
     manager.attach_mock(clone_from_github_mock, 'clone_from_github')
     manager.attach_mock(repo_mock, 'repo')
 
-    google_api_php_client_services.release('/tmp', _GITHUB_ACCOUNT)
+    google_api_php_client_services.release('/tmp', common.GITHUB_ACCOUNT)
     assert manager.mock_calls == [
         call.clone_from_github('google/google-api-php-client-services',
                                '/tmp/google-api-php-client-services',
-                               github_account=_GITHUB_ACCOUNT),
+                               github_account=common.GITHUB_ACCOUNT),
         call.repo.latest_tag(),
         call.repo.authors_since('v0.1')
     ]
@@ -243,18 +245,18 @@ def test_release_different_authors_since_latest_tag(clone_from_github_mock):
     repo_mock = Mock()
     repo_mock.latest_tag.return_value = 'v0.1'
     repo_mock.authors_since.return_value = ['test@test.com', 'test2@test.com']
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
 
     manager = Mock()
     manager.attach_mock(clone_from_github_mock, 'clone_from_github')
     manager.attach_mock(repo_mock, 'repo')
 
-    google_api_php_client_services.release('/tmp', _GITHUB_ACCOUNT)
+    google_api_php_client_services.release('/tmp', common.GITHUB_ACCOUNT)
     assert manager.mock_calls == [
         call.clone_from_github('google/google-api-php-client-services',
                                '/tmp/google-api-php-client-services',
-                               github_account=_GITHUB_ACCOUNT),
+                               github_account=common.GITHUB_ACCOUNT),
         call.repo.latest_tag(),
         call.repo.authors_since('v0.1')
     ]
@@ -264,7 +266,7 @@ def test_release_different_authors_since_latest_tag(clone_from_github_mock):
 def test_release_invalid_latest_tag(clone_from_github_mock):
     repo_mock = Mock()
     repo_mock.latest_tag.return_value = 'v1.0'
-    side_effect = helpers.clone_from_github_mock_side_effect(repo_mock)
+    side_effect = common.clone_from_github_mock_side_effect(repo_mock)
     clone_from_github_mock.side_effect = side_effect
 
     manager = Mock()
@@ -272,12 +274,12 @@ def test_release_invalid_latest_tag(clone_from_github_mock):
     manager.attach_mock(repo_mock, 'repo')
 
     with pytest.raises(Exception) as excinfo:
-        google_api_php_client_services.release('/tmp', _GITHUB_ACCOUNT)
+        google_api_php_client_services.release('/tmp', common.GITHUB_ACCOUNT)
     assert str(excinfo.value) == ('latest tag does not match the pattern'
-                                  ' "^v0\.([0-9]+)$": v1.0')
+                                  r' "^v0\.([0-9]+)$": v1.0')
     assert manager.mock_calls == [
         call.clone_from_github('google/google-api-php-client-services',
                                '/tmp/google-api-php-client-services',
-                               github_account=_GITHUB_ACCOUNT),
+                               github_account=common.GITHUB_ACCOUNT),
         call.repo.latest_tag()
     ]

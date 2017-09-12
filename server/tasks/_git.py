@@ -86,6 +86,17 @@ class Repository(object):
             cwd=self.filepath)
         return data.strip().split('\n')
 
+    def checkout(self, branch):
+        """Switch branches.
+
+        Args:
+            branch (str): the name of the branch to checkout.
+
+        Raises:
+            CallError: if the call returns a non-zero return code.
+        """
+        check_output(['git', 'checkout', branch], cwd=self.filepath)
+
     def commit(self, message, name, email):
         """Record changes to the repository.
 
