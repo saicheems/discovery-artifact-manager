@@ -30,7 +30,6 @@ def discovery_documents(filepath, preferred=False, skip=None):
     filenames = [x for x in filenames if os.path.basename(x) != 'index.json']
     ddocs = {}
     for filename in filenames:
-        print(filename)
         id_ = None
         with open(filename) as file_:
             id_ = json.load(file_)['id']

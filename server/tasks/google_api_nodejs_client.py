@@ -120,7 +120,8 @@ def _update_and_publish_gh_pages(repo, new_version, github_account):
     lines = []
     with open(index_md_filename) as file_:
         lines = file_.readlines()
-    if lines[3] != '\n' or not lines[4].startswith('*'):
+    print(lines)
+    if len(lines) < 5 or lines[3] != '\n' or not lines[4].startswith('*'):
         raise Exception('index.md has an unexpected format')
     lines[4] = lines[4].replace(' (latest)', '', 1)
     bullet = ('* [v{nv} (latest)]'
